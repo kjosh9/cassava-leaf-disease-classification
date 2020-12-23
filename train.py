@@ -8,7 +8,7 @@ import numpy as np
 import os
 
 
-def train():
+def train_from_raw_images():
 
     batch_size = 4
     training_df = pd.read_csv(defs.BASE_FOLDER + defs.TRAINING_FILENAME)
@@ -24,7 +24,7 @@ def train():
         print(file_path)
         parts = tf.strings.split(file_path, os.path.sep)
         print(parts)
-        im_id = parts[-2]
+        im_id = parts[-2] == training_df['image_id'].astype(str)
         print("Image id: ", im_id)
         print(training_df['image_id'] == im_id)
         return training_df['image_id'] == im_id
@@ -47,5 +47,53 @@ def train():
         print("Label: ", label.numpy())
 
 
+def train_from_tf_records():
+    TRAINING_FILENAMES, VALID_FILENAMES = train_test_split(
+        tf.io.gfile.glob(defs.BASE_FOLDER + '/train_tfrecords/ld_train*.tfrec'),
+        test_size=0.35, random_state=5
+    )
+
+    TEST_FILENAMES = tf.io.gfile.glob(defs.BASE_FOLDER + '/test_tfrecords/ld_test*.tfrec')
+
+    print("Train TFRecord Files:", len(TRAINING_FILENAMES))
+    print("Validation TFRecord Files:", len(VALID_FILENAMES))
+    print("Test TFRecord Files:", len(TEST_FILENAMES))
+
+    image_feature_description = {
+        'image': tf.io.FixedLenFeature([], tf.string),
+        'target': tf.io.FixedLenFeature([], tf.int64),
+    } if labeled else {
+        'image': tf.io.FixedLenFeature([], tf.string),
+        'image_name': tf.io.FixedLenfeature([], tf.string)
+    }
+
+    def load_dataset(filenames, labeled=True, ordered=False):
+        ignore_order = tf.data.Options()
+        if not ordered:
+            ignore_order.experimental_deterministic = False # disable order, increase speed
+        dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE) # automatically interleaves reads from multiple files
+        dataset = dataset.with_options(ignore_order) # uses data as soon as it streams in, rather than in its original order
+        dataset = dataset.map(partial(read_tfrecord, labeled=labeled), num_parallel_calls=AUTOTUNE)
+        return dataset
+
+    def get_training_set():
+        dataset = load_dataset(TRAINING_FILENAMES)
+        dataset = dataset.batch(defs.BATCH_SIZE)
+        dataset = dataset.prefetch(AUTOTUNE)
+        return dataset
+
+    def get_validation_set():
+        dataset = load_dataset(VALID_FILENAMES)
+        dataset = dataset.batch(defs.BATCH_SIZE)
+        dataset = dataset.prefetch(AUTOTUNE)
+        return dataset
+
+    def get_test_set():    
+        dataset = load_dataset(TEST_FILENAMES)
+        dataset = dataset.batch(defs.BATCH_SIZE)
+        dataset = dataset.prefetch(AUTOTUNE)
+        return dataset
+
+
 if __name__ == "__main__":
-    train()
+    train_from_tf_records()
