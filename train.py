@@ -1,53 +1,30 @@
 import pandas as pd
-from tensorflow.keras import preprocessing
-from tensorflow.data import Dataset
+import re
 import tensorflow as tf
-from cnn import cnn_model
 import definitions as defs
+from sklearn.model_selection import train_test_split
 import numpy as np
 import os
+from functools import partial
+from cnn import cnn_model
+print("Tensorflow version " + tf.__version__)
 
 
-def train_from_raw_images():
-
-    batch_size = 4
-    training_df = pd.read_csv(defs.BASE_FOLDER + defs.TRAINING_FILENAME)
-    train_ds = Dataset.list_files(str(defs.BASE_FOLDER+defs.TRAINING_FOLDER+'*'), shuffle=False)
-    for f in train_ds.take(5):
-        print(f.numpy())
-    AUTOTUNE = tf.data.experimental.AUTOTUNE
-
-    class_names = np.array([0,1,2,3,4])
-    print(class_names)
-
-    def get_label(file_path):
-        print(file_path)
-        parts = tf.strings.split(file_path, os.path.sep)
-        print(parts)
-        im_id = parts[-2] == training_df['image_id'].astype(str)
-        print("Image id: ", im_id)
-        print(training_df['image_id'] == im_id)
-        return training_df['image_id'] == im_id
-
-    def decode_img(img):
-        img = tf.image.decode_jpeg(img, channels=3)
-        return tf.image.resize(img, [defs.IMAGE_HEIGHT, defs.IMAGE_WIDTH])
-        
-    def process_path(file_path):
-        label = get_label(file_path)
-        img = tf.io.read_file(file_path)
-        img = decode_img(img)
-
-    # Set `num_parallel_calls` so multiple images are loaded/processed in parallel.
-    train_ds = train_ds.map(process_path, num_parallel_calls=AUTOTUNE)
-    val_ds = val_ds.map(process_path, num_parallel_calls=AUTOTUNE)
-
-    for image, label in train_ds.take(1):
-        print("Image shape: ", image.numpy().shape)
-        print("Label: ", label.numpy())
+AUTOTUNE = tf.data.experimental.AUTOTUNE
+IMAGE_SIZE = [512, 512]
 
 
-def train_from_tf_records():
+def train_from_tf_records(model):
+
+    try:
+        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
+        print('Device:', tpu.master())
+        tf.config.experimental_connect_to_cluster(tpu)
+        tf.tpu.experimental.initialize_tpu_system(tpu)
+        strategy = tf.distribute.experimental.TPUStrategy(tpu)
+    except:
+        strategy = tf.distribute.get_strategy()
+
     TRAINING_FILENAMES, VALID_FILENAMES = train_test_split(
         tf.io.gfile.glob(defs.BASE_FOLDER + '/train_tfrecords/ld_train*.tfrec'),
         test_size=0.35, random_state=5
@@ -59,13 +36,33 @@ def train_from_tf_records():
     print("Validation TFRecord Files:", len(VALID_FILENAMES))
     print("Test TFRecord Files:", len(TEST_FILENAMES))
 
-    image_feature_description = {
-        'image': tf.io.FixedLenFeature([], tf.string),
-        'target': tf.io.FixedLenFeature([], tf.int64),
-    } if labeled else {
-        'image': tf.io.FixedLenFeature([], tf.string),
-        'image_name': tf.io.FixedLenfeature([], tf.string)
-    }
+    def decode_image(image):
+        image = tf.image.decode_jpeg(image, channels=3)
+        image = tf.cast(image, tf.float32) / 255.0
+        image = tf.reshape(image, [*IMAGE_SIZE, 3])
+        return image
+
+    def read_tfrecord(example, labeled):
+        image_feature_description = {
+            'image': tf.io.FixedLenFeature([], tf.string),
+            'target': tf.io.FixedLenFeature([], tf.int64),
+        } if labeled else {
+            'image': tf.io.FixedLenFeature([], tf.string),
+            'image_name': tf.io.FixedLenFeature([], tf.string)
+        }
+        example = tf.io.parse_single_example(example, image_feature_description)
+        image = decode_image(example['image'])
+        if labeled:
+            label = tf.cast(example['target'], tf.int32)
+            return image, label
+        idnum = example['image_name']
+        return image, idnum
+
+    def data_augment(image, label):
+        # Thanks to the dataset.prefetch(AUTO) statement in the following function this happens essentially for free on TPU. 
+        # Data pipeline code is executed on the "CPU" part of the TPU while the TPU itself is computing gradients.
+        image = tf.image.random_flip_left_right(image)
+        return image, label
 
     def load_dataset(filenames, labeled=True, ordered=False):
         ignore_order = tf.data.Options()
@@ -89,11 +86,52 @@ def train_from_tf_records():
         return dataset
 
     def get_test_set():    
-        dataset = load_dataset(TEST_FILENAMES)
+        dataset = load_dataset(TEST_FILENAMES, labeled=False)
         dataset = dataset.batch(defs.BATCH_SIZE)
         dataset = dataset.prefetch(AUTOTUNE)
         return dataset
 
+    def count_data_items(filenames):
+        n = [int(re.compile(r"-([0-9]*)\.").search(filename).group(1)) for filename in filenames]
+        return np.sum(n)
 
+    NUM_TRAINING_IMAGES = count_data_items(TRAINING_FILENAMES)
+    NUM_VALIDATION_IMAGES = count_data_items(VALID_FILENAMES)
+    NUM_TEST_IMAGES = count_data_items(TEST_FILENAMES)
+
+    print('Dataset: {} training images, {} validation images, {} (unlabeled) test images'.format(
+        NUM_TRAINING_IMAGES, NUM_VALIDATION_IMAGES, NUM_TEST_IMAGES))
+
+    print("Training data shapes:")
+    for image, label in get_training_set().take(3):
+        print(image.numpy().shape, label.numpy().shape)
+    print("Training data label examples:", label.numpy())
+    print("Validation data shapes:")
+    for image, label in get_validation_set().take(3):
+        print(image.numpy().shape, label.numpy().shape)
+    print("Validation data label examples:", label.numpy())
+    print("Test data shapes:")
+    for image, idnum in get_test_set().take(3):
+        print(image.numpy().shape, idnum.numpy().shape)
+    print("Test data IDs:", idnum.numpy().astype('U')) # U=unicode string
+    
+    training_set = get_training_set()
+    valid_set = get_validation_set()
+
+    for image, label in training_set.take(3):
+        print(image.numpy().shape, label.numpy().shape)
+
+    early_stopping_cb = tf.keras.callbacks.EarlyStopping(
+        patience=5,
+        restore_best_weights=True
+    )
+
+    model.model.fit(
+            training_set,
+            epochs=2,
+            validation_data=valid_set
+    )
+    
 if __name__ == "__main__":
-    train_from_tf_records()
+    model = cnn_model()
+    train_from_tf_records(model)
