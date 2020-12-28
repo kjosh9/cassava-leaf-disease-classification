@@ -13,6 +13,15 @@ print("Tensorflow version " + tf.__version__)
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 IMAGE_SIZE = [512, 512]
 
+def create_submission_file():
+    print('Generating submission.csv file...')
+    test_ids_ds = test_ds.map(lambda image, idnum: idnum).unbatch()
+    test_ids = next(iter(test_ids_ds.batch(NUM_TEST_IMAGES))).numpy().astype('U') # all in one batch
+    np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='id,label', comments='')
+    #!head submission.csv
+
+def to_float32(image, label):
+    return tf.cast(image, tf.float32), label
 
 def train_from_tf_records(model):
 
@@ -59,8 +68,6 @@ def train_from_tf_records(model):
         return image, idnum
 
     def data_augment(image, label):
-        # Thanks to the dataset.prefetch(AUTO) statement in the following function this happens essentially for free on TPU. 
-        # Data pipeline code is executed on the "CPU" part of the TPU while the TPU itself is computing gradients.
         image = tf.image.random_flip_left_right(image)
         return image, label
 
@@ -94,32 +101,9 @@ def train_from_tf_records(model):
     def count_data_items(filenames):
         n = [int(re.compile(r"-([0-9]*)\.").search(filename).group(1)) for filename in filenames]
         return np.sum(n)
-
-    NUM_TRAINING_IMAGES = count_data_items(TRAINING_FILENAMES)
-    NUM_VALIDATION_IMAGES = count_data_items(VALID_FILENAMES)
-    NUM_TEST_IMAGES = count_data_items(TEST_FILENAMES)
-
-    print('Dataset: {} training images, {} validation images, {} (unlabeled) test images'.format(
-        NUM_TRAINING_IMAGES, NUM_VALIDATION_IMAGES, NUM_TEST_IMAGES))
-
-    print("Training data shapes:")
-    for image, label in get_training_set().take(3):
-        print(image.numpy().shape, label.numpy().shape)
-    print("Training data label examples:", label.numpy())
-    print("Validation data shapes:")
-    for image, label in get_validation_set().take(3):
-        print(image.numpy().shape, label.numpy().shape)
-    print("Validation data label examples:", label.numpy())
-    print("Test data shapes:")
-    for image, idnum in get_test_set().take(3):
-        print(image.numpy().shape, idnum.numpy().shape)
-    print("Test data IDs:", idnum.numpy().astype('U')) # U=unicode string
-    
+   
     training_set = get_training_set()
     valid_set = get_validation_set()
-
-    for image, label in training_set.take(3):
-        print(image.numpy().shape, label.numpy().shape)
 
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
         patience=5,
@@ -128,10 +112,20 @@ def train_from_tf_records(model):
 
     model.model.fit(
             training_set,
-            epochs=2,
+            epochs=3,
             validation_data=valid_set
     )
     
+    test_ds = get_test_set() 
+    test_ds = test_ds.map(to_float32)
+
+    print('Computing predictions...')
+    #test_images_ds = testing_dataset
+    test_images_ds = test_ds.map(lambda image, idnum: image)
+    probabilities = model.model.predict(test_images_ds)
+    predictions = np.argmax(probabilities, axis=-1)
+    print(predictions)
+
 if __name__ == "__main__":
     model = cnn_model()
     train_from_tf_records(model)
