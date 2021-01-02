@@ -4,3 +4,5 @@ TRAINING_TF_FOLDER = "train_tfrecords/"
 TRAINING_FILENAME = "train.csv"
 TEST_FOLDER = "test_images/"
 TEST_TF_FOLDER = "test_tfrecords/"
+
+BATCH_SIZE = 3

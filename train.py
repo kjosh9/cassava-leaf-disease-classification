@@ -18,7 +18,6 @@ def create_submission_file():
     test_ids_ds = test_ds.map(lambda image, idnum: idnum).unbatch()
     test_ids = next(iter(test_ids_ds.batch(NUM_TEST_IMAGES))).numpy().astype('U') # all in one batch
     np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='id,label', comments='')
-    #!head submission.csv
 
 def to_float32(image, label):
     return tf.cast(image, tf.float32), label
@@ -60,6 +59,7 @@ def load_dataset(filenames, labeled=True, ordered=False):
 
 def get_training_set(filenames):
     dataset = load_dataset(filenames)
+    dataset = dataset.repeat()
     dataset = dataset.batch(defs.BATCH_SIZE)
     dataset = dataset.prefetch(AUTOTUNE)
     return dataset
@@ -105,6 +105,12 @@ def train_from_tf_records(model):
     testing_dataset = get_test_set(TEST_FILENAMES, ordered=False)
     testing_dataset = testing_dataset.unbatch().batch(20)
 
+    NUM_TRAINING_IMAGES = count_data_items(TRAINING_FILENAMES)
+    NUM_VALIDATION_IMAGES = count_data_items(VALID_FILENAMES)
+
+    STEPS_PER_EPOCH = NUM_TRAINING_IMAGES // defs.BATCH_SIZE
+    VALID_STEPS = NUM_VALIDATION_IMAGES // defs.BATCH_SIZE
+
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
         patience=5,
         restore_best_weights=True
@@ -112,8 +118,10 @@ def train_from_tf_records(model):
 
     model.model.fit(
             training_set,
-            epochs=1,
+            epochs=5,
+            steps_per_epoch=STEPS_PER_EPOCH,
             validation_data=valid_set,
+            validation_steps=VALID_STEPS,
             callbacks=[early_stopping_cb]
     )
 
