@@ -59,6 +59,7 @@ def load_dataset(filenames, labeled=True, ordered=False):
 
 def get_training_set(filenames):
     dataset = load_dataset(filenames)
+    dataset = dataset.map(data_augment, num_parallel_calls=AUTOTUNE)
     dataset = dataset.repeat()
     dataset = dataset.batch(defs.BATCH_SIZE)
     dataset = dataset.prefetch(AUTOTUNE)

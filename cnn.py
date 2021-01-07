@@ -1,9 +1,3 @@
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import LeakyReLU
-from tensorflow.keras.optimizers import Adam
 import tensorflow as tf
 import definitions as defs
 
@@ -15,11 +9,11 @@ class cnn_model():
 
         IMAGE_SIZE = [512, 512]
 
-        img_adjust_layer = tf.keras.layers.Lambda(tf.keras.applications.resnet50.preprocess_input,
+        img_adjust_layer = tf.keras.layers.Lambda(tf.keras.applications.xception.preprocess_input,
                                                   input_shape=[*IMAGE_SIZE, 3])
     
-        base_model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False)
-        base_model.trainable = False
+        base_model = tf.keras.applications.Xception(weights='imagenet', include_top=False)
+        base_model.trainable = True
     
         self.model = tf.keras.Sequential([
             tf.keras.layers.BatchNormalization(renorm=True),
@@ -27,7 +21,7 @@ class cnn_model():
             base_model,
             tf.keras.layers.GlobalAveragePooling2D(),
             tf.keras.layers.Dense(8, activation='relu'),
-            #tf.keras.layers.BatchNormalization(renorm=True),
+            tf.keras.layers.BatchNormalization(renorm=True),
             tf.keras.layers.Dense(5, activation='softmax')  
         ])
 
