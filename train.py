@@ -13,12 +13,6 @@ print("Tensorflow version " + tf.__version__)
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 IMAGE_SIZE = [512, 512]
 
-def create_submission_file():
-    print('Generating submission.csv file...')
-    test_ids_ds = test_ds.map(lambda image, idnum: idnum).unbatch()
-    test_ids = next(iter(test_ids_ds.batch(NUM_TEST_IMAGES))).numpy().astype('U') # all in one batch
-    np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='id,label', comments='')
-
 def to_float32(image, label):
     return tf.cast(image, tf.float32), label
 
@@ -108,12 +102,13 @@ def train_from_tf_records(model):
 
     NUM_TRAINING_IMAGES = count_data_items(TRAINING_FILENAMES)
     NUM_VALIDATION_IMAGES = count_data_items(VALID_FILENAMES)
+    NUM_TEST_IMAGES = count_data_items(TEST_FILENAMES)
 
     STEPS_PER_EPOCH = NUM_TRAINING_IMAGES // defs.BATCH_SIZE
     VALID_STEPS = NUM_VALIDATION_IMAGES // defs.BATCH_SIZE
 
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
-        patience=5,
+        patience=2,
         restore_best_weights=True
     )
 
@@ -133,6 +128,13 @@ def train_from_tf_records(model):
     probabilities = model.model.predict(test_images_ds)
     predictions = np.argmax(probabilities, axis=-1)
     print(predictions)
+
+    #Create submission file
+    print('Generating submission.csv file...')
+    test_ids_ds = testing_set.map(lambda image, idnum: idnum).unbatch()
+    test_ids = next(iter(test_ids_ds.batch(NUM_TEST_IMAGES))).numpy().astype('U') # all in one batch
+    np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='id,label', comments='')
+
 
 if __name__ == "__main__":
     model = cnn_model()

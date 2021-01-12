@@ -8,21 +8,29 @@ class cnn_model():
     def build_model(self):
 
         IMAGE_SIZE = [512, 512]
-
-        img_adjust_layer = tf.keras.layers.Lambda(tf.keras.applications.xception.preprocess_input,
-                                                  input_shape=[*IMAGE_SIZE, 3])
-    
-        base_model = tf.keras.applications.Xception(weights='imagenet', include_top=False)
-        base_model.trainable = True
-    
+ 
         self.model = tf.keras.Sequential([
             tf.keras.layers.BatchNormalization(renorm=True),
-            img_adjust_layer,
-            base_model,
+            tf.keras.layers.Conv2D(filters=4,
+                                   kernel_size=(4,4),
+                                   strides=(4,4),
+                                   activation='relu',
+                                   input_shape=[*IMAGE_SIZE,3]),
+            tf.keras.layers.Conv2D(filters=4,
+                                   kernel_size=(4,4),
+                                   strides=(4,4),
+                                   activation='relu'),
+            tf.keras.layers.Conv2D(filters=4,
+                                   kernel_size=(4,4),
+                                   strides=(4,4),
+                                   activation='relu'),
             tf.keras.layers.GlobalAveragePooling2D(),
+            tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(8, activation='relu'),
             tf.keras.layers.BatchNormalization(renorm=True),
-            tf.keras.layers.Dense(5, activation='softmax')  
+            tf.keras.layers.Dense(8, activation='relu'),
+            tf.keras.layers.BatchNormalization(renorm=True),
+            tf.keras.layers.Dense(5, activation='softmax')
         ])
 
         lr_scheduler = tf.keras.optimizers.schedules.ExponentialDecay(
@@ -35,6 +43,7 @@ class cnn_model():
             loss='sparse_categorical_crossentropy',  
             metrics=['sparse_categorical_accuracy']
         )
+
         print("model built")
 
     def train(self):
