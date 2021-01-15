@@ -8,26 +8,36 @@ class cnn_model():
     def build_model(self):
 
         IMAGE_SIZE = [512, 512]
- 
+
+        resize_and_crop = tf.keras.Sequential([
+            tf.keras.layers.experimental.preprocessing.RandomCrop(height=512, width=512),
+            tf.keras.layers.experimental.preprocessing.Rescaling(1./255)
+        ])
+
+        data_augmentation = tf.keras.Sequential([
+            tf.keras.layers.experimental.preprocessing.RandomFlip("horizontal_and_vertical"),
+            tf.keras.layers.experimental.preprocessing.RandomRotation(0.2),
+        ])
+
         self.model = tf.keras.Sequential([
+            resize_and_crop,
+            data_augmentation,
             tf.keras.layers.BatchNormalization(renorm=True),
             tf.keras.layers.Conv2D(filters=4,
-                                   kernel_size=(4,4),
-                                   strides=(4,4),
-                                   activation='relu',
-                                   input_shape=[*IMAGE_SIZE,3]),
+                                kernel_size=(5,5),
+                                strides=(2,2),
+                                activation='relu',
+                                input_shape=[*IMAGE_SIZE,3]),
             tf.keras.layers.Conv2D(filters=4,
-                                   kernel_size=(4,4),
-                                   strides=(4,4),
-                                   activation='relu'),
+                                kernel_size=(4,4),
+                                strides=(4,4),
+                                activation='relu'),
             tf.keras.layers.Conv2D(filters=4,
-                                   kernel_size=(4,4),
-                                   strides=(4,4),
-                                   activation='relu'),
+                                kernel_size=(4,4),
+                                strides=(4,4),
+                                activation='relu'),
             tf.keras.layers.GlobalAveragePooling2D(),
             tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(8, activation='relu'),
-            tf.keras.layers.BatchNormalization(renorm=True),
             tf.keras.layers.Dense(8, activation='relu'),
             tf.keras.layers.BatchNormalization(renorm=True),
             tf.keras.layers.Dense(5, activation='softmax')
@@ -45,6 +55,3 @@ class cnn_model():
         )
 
         print("model built")
-
-    def train(self):
-        self.model.fit()

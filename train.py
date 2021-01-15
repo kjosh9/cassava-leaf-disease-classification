@@ -17,13 +17,11 @@ def to_float32(image, label):
     return tf.cast(image, tf.float32), label
 
 def data_augment(image, label):
-    image = tf.image.random_flip_left_right(image)
+    #image = tf.image.random_flip_left_right(image)
     return image, label
 
 def decode_image(image):
     image = tf.image.decode_jpeg(image, channels=3)
-    image = tf.cast(image, tf.float32) / 255.0
-    image = tf.reshape(image, [*IMAGE_SIZE, 3])
     return image
 
 def read_tfrecord(example, labeled):
@@ -53,7 +51,7 @@ def load_dataset(filenames, labeled=True, ordered=False):
 
 def get_training_set(filenames):
     dataset = load_dataset(filenames)
-    dataset = dataset.map(data_augment, num_parallel_calls=AUTOTUNE)
+    #dataset = dataset.map(data_augment, num_parallel_calls=AUTOTUNE)
     dataset = dataset.repeat()
     dataset = dataset.batch(defs.BATCH_SIZE)
     dataset = dataset.prefetch(AUTOTUNE)
@@ -114,7 +112,7 @@ def train_from_tf_records(model):
 
     model.model.fit(
             training_set,
-            epochs=5,
+            epochs=10,
             steps_per_epoch=STEPS_PER_EPOCH,
             validation_data=valid_set,
             validation_steps=VALID_STEPS,
@@ -133,7 +131,7 @@ def train_from_tf_records(model):
     print('Generating submission.csv file...')
     test_ids_ds = testing_set.map(lambda image, idnum: idnum).unbatch()
     test_ids = next(iter(test_ids_ds.batch(NUM_TEST_IMAGES))).numpy().astype('U') # all in one batch
-    np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='id,label', comments='')
+    np.savetxt('submission.csv', np.rec.fromarrays([test_ids, predictions]), fmt=['%s', '%d'], delimiter=',', header='image_id,label', comments='')
 
 
 if __name__ == "__main__":
