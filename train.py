@@ -49,10 +49,21 @@ def load_dataset(filenames, labeled=True, ordered=False):
     dataset = dataset.map(partial(read_tfrecord, labeled=labeled), num_parallel_calls=AUTOTUNE)
     return dataset
 
+def class_func(image, label):
+    return label
+
+resampler = tf.data.experimental.rejection_resample(
+    class_func, target_dist=[0.2,0.2,0.2,0.2,0.2]
+)
+
 def get_training_set(filenames):
+    print("JOSHUA DEBUGGING MESSAGE: Getting dataset")
     dataset = load_dataset(filenames)
-    #dataset = dataset.map(data_augment, num_parallel_calls=AUTOTUNE)
     dataset = dataset.repeat()
+    resampled_dataset = dataset.apply(resampler)
+    dataset = resampled_dataset.map(lambda extra_label, features_and_label: features_and_label)
+    #dataset = dataset.shuffle(buffer_size=1000,
+    #                          reshuffle_each_iteration=True)
     dataset = dataset.batch(defs.BATCH_SIZE)
     dataset = dataset.prefetch(AUTOTUNE)
     return dataset
@@ -69,16 +80,12 @@ def get_test_set(filenames, ordered):
     dataset = dataset.prefetch(AUTOTUNE)
     return dataset
 
+
 def train_from_tf_records(model):
 
-    try:
-        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
-        print('Device:', tpu.master())
-        tf.config.experimental_connect_to_cluster(tpu)
-        tf.tpu.experimental.initialize_tpu_system(tpu)
-        strategy = tf.distribute.experimental.TPUStrategy(tpu)
-    except:
-        strategy = tf.distribute.get_strategy()
+    print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+    tf.debugging.set_log_device_placement(True)
+
 
     TRAINING_FILENAMES, VALID_FILENAMES = train_test_split(
         tf.io.gfile.glob(defs.BASE_FOLDER + '/train_tfrecords/ld_train*.tfrec'),
@@ -106,18 +113,19 @@ def train_from_tf_records(model):
     VALID_STEPS = NUM_VALIDATION_IMAGES // defs.BATCH_SIZE
 
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
-        patience=2,
+        patience=4,
         restore_best_weights=True
     )
 
-    model.model.fit(
-            training_set,
-            epochs=10,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            validation_data=valid_set,
-            validation_steps=VALID_STEPS,
-            callbacks=[early_stopping_cb]
-    )
+    with tf.device('/device:GPU:0'):
+        model.model.fit(
+                training_set,
+                epochs=20,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                validation_data=valid_set,
+                validation_steps=VALID_STEPS,
+                callbacks=[early_stopping_cb]
+        )
 
     print("Test TFRecord Files:", len(TEST_FILENAMES))
     testing_set = get_test_set(TEST_FILENAMES, ordered=True) 

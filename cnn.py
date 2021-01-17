@@ -17,7 +17,13 @@ class cnn_model():
         data_augmentation = tf.keras.Sequential([
             tf.keras.layers.experimental.preprocessing.RandomFlip("horizontal_and_vertical"),
             tf.keras.layers.experimental.preprocessing.RandomRotation(0.2),
+            tf.keras.layers.experimental.preprocessing.RandomContrast(factor=[1,1])
         ])
+
+        img_adjust_layer = tf.keras.layers.Lambda(tf.keras.applications.resnet50.preprocess_input, input_shape=[*IMAGE_SIZE, 3])
+        
+        base_model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False)
+        base_model.trainable = True
 
         self.model = tf.keras.Sequential([
             resize_and_crop,
@@ -39,7 +45,6 @@ class cnn_model():
             tf.keras.layers.GlobalAveragePooling2D(),
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(8, activation='relu'),
-            tf.keras.layers.BatchNormalization(renorm=True),
             tf.keras.layers.Dense(5, activation='softmax')
         ])
 
