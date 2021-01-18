@@ -25,25 +25,32 @@ class cnn_model():
         base_model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False)
         base_model.trainable = True
 
+        cmod_layer = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(filters=64,
+                                   kernel_size=(3,3),
+                                   strides=(1,1),
+                                   activation='swish'),
+            tf.keras.layers.BatchNormalization(renorm=True),
+        ])
+
         self.model = tf.keras.Sequential([
             resize_and_crop,
             data_augmentation,
-            tf.keras.layers.BatchNormalization(renorm=True),
-            tf.keras.layers.Conv2D(filters=4,
-                                kernel_size=(5,5),
+            tf.keras.layers.Conv2D(filters=64,
+                                kernel_size=(7,7),
                                 strides=(2,2),
-                                activation='relu',
+                                activation='swish',
                                 input_shape=[*IMAGE_SIZE,3]),
-            tf.keras.layers.Conv2D(filters=4,
-                                kernel_size=(4,4),
-                                strides=(4,4),
-                                activation='relu'),
-            tf.keras.layers.Conv2D(filters=4,
-                                kernel_size=(4,4),
-                                strides=(4,4),
-                                activation='relu'),
+            tf.keras.layers.BatchNormalization(renorm=True),
+            tf.keras.layers.MaxPool2D(pool_size=(3,3)),
+            cmod_layer,
+            cmod_layer,
+            cmod_layer,
+            cmod_layer,
+            cmod_layer,
             tf.keras.layers.GlobalAveragePooling2D(),
             tf.keras.layers.Flatten(),
+            #tf.keras.layers.Dense(8, activation='relu'),
             tf.keras.layers.Dense(8, activation='relu'),
             tf.keras.layers.Dense(5, activation='softmax')
         ])
